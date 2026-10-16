@@ -57,7 +57,7 @@ def retrieve_relevant_chunks(query: str, k: int = 3):
 # temperature=0 makes the model as deterministic/factual as possible -
 # we do NOT want creative variation for a policy support bot.
 llm = ChatGroq(
-    model="llama-3.3-70b-versatile",
+    model="groq/compound-mini",
     temperature=0,
     groq_api_key=GROQ_API_KEY,
 )

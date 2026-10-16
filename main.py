@@ -1,9 +1,8 @@
 """
-Phase 2 - Module 1: FastAPI Setup + Basic /ask Endpoint
+ShopEase SupportMate - FastAPI Backend Entrypoint
 ------------------------------------------------------------
-Goal: Expose the existing generate_answer() function (from Module 6) as
-an HTTP endpoint, so any client (React, Postman, curl) can send a
-question and get a JSON response back.
+Main API server handling user questions via RAG (Retrieval-Augmented Generation)
+and storing support escalation tickets in MongoDB.
 """
 
 import logging
@@ -21,12 +20,25 @@ logging.basicConfig(
 )
 logger = logging.getLogger("supportmate")
 
-app = FastAPI(title="ShopEase SupportMate API")
+app = FastAPI(
+    title="ShopEase SupportMate API",
+    description="Citation-aware e-commerce support RAG backend",
+    version="1.0.0",
+)
 
-# CORS must be added right after app creation, before any routes are hit.
+# CORS Configuration
+# Include localhost and 127.0.0.1 origins for default Vite ports (5173, 5174) and React ports (3000).
+# Prevents "Failed to fetch" browser CORS errors during development.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5174"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -35,17 +47,24 @@ app.add_middleware(
 
 @app.get("/")
 def root():
-    """Health-check route."""
-    return {"status": "ShopEase SupportMate API is running"}
+    """
+    Health-check endpoint.
+    Used by frontend to verify backend availability and server readiness.
+    """
+    return {
+        "status": "online",
+        "message": "ShopEase SupportMate API is running and ready to process questions.",
+    }
 
 
 @app.post("/ask", response_model=AskResponse)
 def ask(request: AskRequest):
     """
-    Main endpoint. Classifies the question first - if it's general_chat
-    (greetings, small talk, meta questions about the bot), skip the
-    expensive retrieval + generation calls entirely and return a canned
-    friendly reply. Otherwise, run the full RAG pipeline as before.
+    Main question-answering endpoint.
+    1. Classifies user intent (greetings vs policy question).
+    2. Runs vector search retrieval if necessary.
+    3. Generates LLM response with cited evidence.
+    4. Evaluates whether human escalation is required.
     """
     logger.info(f"Received question: {request.question!r}")
 
@@ -58,12 +77,12 @@ def ask(request: AskRequest):
             detail="SupportMate is temporarily unable to process your question. Please try again shortly.",
         )
 
-    # Skip retrieval/generation entirely for greetings and meta-questions.
+    # Fast-path for greetings & general chat (skips vector search & LLM generation)
     if classification["category"] == "general_chat":
         logger.info("Answered | category=general_chat (skipped retrieval/generation)")
         return AskResponse(
             question=request.question,
-            answer="Hey! I'm ShopEase SupportMate 👋 I can help with questions about returns, refunds, shipping, cancellations, and warranty. What can I help you with?",
+            answer="Hey there! I'm ShopEase SupportMate 👋 I can help answer questions about our return policy, shipping timelines, order cancellations, and warranty claims. What can I help you with today?",
             sources_used=[],
             evidence_found=True,
             category="general_chat",
@@ -109,6 +128,10 @@ def ask(request: AskRequest):
 
 @app.post("/tickets")
 async def create_ticket(ticket_data: TicketCreate):
+    """
+    Support ticket creation endpoint.
+    Persists escalated conversations into MongoDB.
+    """
     try:
         ticket = Ticket(**ticket_data.dict())
         result = await tickets_collection.insert_one(ticket.dict())

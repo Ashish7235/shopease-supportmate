@@ -38,7 +38,7 @@ CATEGORIES = [
 PRIORITIES = ["low", "medium", "high"]
 
 classification_llm = ChatGroq(
-    model="llama-3.3-70b-versatile",
+    model="groq/compound-mini",
     temperature=0,
     groq_api_key=GROQ_API_KEY,
 )
